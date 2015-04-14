@@ -1,0 +1,129 @@
+#!/bin/bash
+#PBS -l nodes=1:ppn=4
+#PBS -q overflow
+#PBS -N Merge_VCF
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd ${DIR_NAME}
+#SEURAT_BASENAME=Sample_NTLH_0001_1_PB_Whole_C5_A1S5U_T00027-Sample_NTLH_0001_1_BR_Whole_T3_A1S5U_T00025
+SNPSIFT=/home/jkeats/local/snpEff_v3.6c/snpEff/SnpSift.jar
+PATH=/home/tgenref/pipeline_v0.3/bin/bedtools-2.17.0/bin/:${PATH}
+module load R/2.15.2
+
+# Variables
+
+SNPEFF=/home/jkeats/local/snpEff_v3.6c/snpEff/snpEff.jar
+SNPEFF_CONFIG=/home/jkeats/local/snpEff_v3.6c/snpEff/snpEff.config
+GATK=/home/tgenref/pipeline_v0.4/bin/GenomeAnalysisTK-3.1-1/GenomeAnalysisTK.jar
+VCFMERGER=/scratch/speng/projects/SNV_callers/script/Snipea.main.sh
+VCFMERGER_DIR=/scratch/speng/projects/SNV_callers/script
+VCFSORTER=/home/jkeats/local/vcfsorter.pl
+SAMTOOLS=/home/tgenref/pipeline_v0.4/bin/samtools-0.1.19/samtools
+VARSCAN=/home/jkeats/local/varscan-2.3.7/VarScan.v2.3.7.jar
+#POST_MERGE_VENN=/home/jkeats/local/merge3vcfs_v20140803/pecan.Venn_postMMRF_specific_filtering.sh
+
+REF=/scratch/jkeats/MMRF/resources/hs37d5_plusRibo_plusOncoViruses_plusERCC.fa
+DICT=/scratch/jkeats/MMRF/resources/hs37d5_plusRibo_plusOncoViruses_plusERCC.dict
+KG=/scratch/jkeats/MMRF/resources/1000G_phase1.snps.high_confidence.b37.vcf
+COSMIC=/scratch/jkeats/MMRF/resources/CosmicCodingMuts_v66_20130725_sorted.vcf
+NHLBI=/scratch/jkeats/MMRF/resources/ESP6500SI-V2_snps_indels.vcf
+DBSNP=/scratch/jkeats/MMRF/resources/dbsnp_137.b37.vcf
+TSE61_BED=/home/tgenref/pipeline_v0.3/annotations/exome_capture/illumina_truseq/TruSeq_exome_targeted_regions_b37_padded.bed
+S5U_BED=/home/tgenref/pipeline_v0.3/ensembl70/Ensembl_v70_hs37d5_exonic_coordinates_touched_v5UTR_padded25.bed
+DBNSFP=/scratch/jkeats/MMRF/resources/dbNSFP2.4.txt.gz  ##### UPDATE
+#EXOME_TYPE=S5U
+
+# Merge the 5 different VCF using the merger
+echo
+echo Starting to merge the filtered VCFs
+echo
+
+bash /scratch/speng/projects/SNV_callers/script/Snipea.main.sh --dirscript /scratch/speng/projects/SNV_callers/script --seu ${SEURAT_BASENAME}.seurat.vcf --slksnv ${SEURAT_BASENAME}.passed.somatic.snvs.vcf --slkindel ${SEURAT_BASENAME}.passed.somatic.indels.vcf --mtcsnv ${SEURAT_BASENAME}_MuTect_All.vcf --outprefix ${SEURAT_BASENAME}
+
+echo
+echo Finished Merging
+echo ...
+
+# Sort the Merged VCF for GATK compatibility
+echo Sorting the Merged VCF
+
+${VCFSORTER} ${DICT} ${SEURAT_BASENAME}.merge.vcf > ${SEURAT_BASENAME}.merge.sort.vcf
+
+echo Finished Sorting
+echo ...
+
+# Remove unwanted INFO keys
+echo Removing unwanted INFO keys
+echo ...
+
+java -jar ${SNPSIFT} rmInfo ${SEURAT_BASENAME}.merge.sort.vcf \
+	SEURAT_DNA_ALT_ALLELE_FORWARD_FRACTION \
+	SEURAT_DNA_ALT_ALLELE_FORWARD \
+	SEURAT_DNA_ALT_ALLELE_REVERSE_FRACTION \
+	SEURAT_DNA_ALT_ALLELE_REVERSE \
+	SEURAT_DNA_ALT_ALLELE_TOTAL_FRACTION \
+	SEURAT_DNA_ALT_ALLELE_TOTAL \
+	SEURAT_DNA_REF_ALLELE_FORWARD \
+	SEURAT_DNA_REF_ALLELE_REVERSE \
+	SEURAT_DNA_REF_ALLELE_TOTAL > ${SEURAT_BASENAME}.merge.sort.clean.vcf
+
+echo Finished Removing Unwanted INFO keys
+
+# Filter to target regions
+echo Filtering calls to respective target regions
+echo ...
+
+if [ "${EXOME_TYPE}" == "TSE61" ]
+then
+	cat ${SEURAT_BASENAME}.merge.sort.clean.vcf | java -jar ${SNPSIFT} intervals ${TSE61_BED} > ${SEURAT_BASENAME}.merge.sort.clean.f2t.vcf
+elif [ "${EXOME_TYPE}" == "S5U" ]
+then
+	cat ${SEURAT_BASENAME}.merge.sort.clean.vcf | java -jar ${SNPSIFT} intervals ${S5U_BED} > ${SEURAT_BASENAME}.merge.sort.clean.f2t.vcf
+else
+      cp ${SEURAT_BASENAME}.merge.sort.clean.vcf ${SEURAT_BASENAME}.merge.sort.clean.f2t.vcf
+fi
+
+echo Finished Filtering Calls to Targets
+
+# Annotate the merged vcf using GATK
+echo Annotate the merged VCF
+echo ...
+#Cleanup VCF for testing to remove seurat indels
+#grep -v "SEURAT_TYPE=somatic_deletion" ${SEURAT_BASENAME}.merge.sort.clean.f2t.vcf | grep -v "SEURAT_TYPE=somatic_insertion" > ${SEURAT_BASENAME}.merge.sort.clean.f2t2.vcf
+
+java -Xmx24g -jar ${GATK} -R ${REF} \
+	-T VariantAnnotator \
+	-nt 4 \
+	-o ${SEURAT_BASENAME}.merge.sort.clean.f2t.ann.vcf \
+	--variant ${SEURAT_BASENAME}.merge.sort.clean.f2t.vcf \
+	--dbsnp ${DBSNP} \
+	--comp:NHLBI ${NHLBI} \
+	--comp:1000G ${KG} \
+	--comp:COSMIC ${COSMIC}
+
+echo Finished Annotating Merged VCF
+
+
+# add dbNSFP annotaions
+java -jar ${SNPSIFT} dbnsfp \
+        -v ${DBNSFP} \
+        -a \
+        -f Interpro_domain,Polyphen2_HVAR_pred,GERP++_NR,GERP++_RS,LRT_score,MutationTaster_score,MutationAssessor_score,FATHMM_score,Polyphen2_HVAR_score,SIFT_score,Polyphen2_HDIV_score \
+        ${SEURAT_BASENAME}.merge.sort.clean.f2t.ann.vcf > ${SEURAT_BASENAME}.merge.sort.clean.f2t.ann.dbnsfp.vcf
+
+# add snpEFF annotations
+java -Xmx4G -jar ${SNPEFF} -canon -c ${SNPEFF_CONFIG} -v -lof GRCh37.74 ${SEURAT_BASENAME}.merge.sort.clean.f2t.ann.dbnsfp.vcf > ${SEURAT_BASENAME}.merge.sort.clean.f2t.ann.dbnsfp.se74lofcan.vcf
+
+java -Xmx4G -jar ${SNPEFF} -c ${SNPEFF_CONFIG} -v -lof GRCh37.74 ${SEURAT_BASENAME}.merge.sort.clean.f2t.ann.dbnsfp.vcf > ${SEURAT_BASENAME}.merge.sort.clean.f2t.ann.dbnsfp.se74lof.vcf
+
+bash /scratch/speng/projects/SNV_callers/script/snipea.weightedscore.ranking.sh ${SEURAT_BASENAME}.merge.sort.clean.f2t.ann.dbnsfp.se74lof.vcf ${DIR_NAME}
+
+rm tmp.*  >/dev/null 2>&1
+exit
+
+
+
+
+
+
