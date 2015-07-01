@@ -7,7 +7,7 @@
 ## INTRODUCTION ##
 #@@@@@@@@@@@@@@@@#
 
-Snipea (SNv Integration, Prioritization, Ensemble, and Annotation) is a tool to further identify, prioritize and annotate somatic SNV from patient tumor (Other Biological samples). Our tool will apply an ensemble-based approach to improve the accuracy and annotation of variant callers. “Snipea” calculates the authenticity and statistical significance that an SNV is causative for a query disease and hence provides a means of prioritizing candidate SNVs. The ranking algorithm will take into account the callers_agreement, clinical_impact (non-synonymous SNV), quality score from each tool and public_database_status.
+Snipea (SNv Integration, Prioritization, Ensemble, and Annotation) is a tool to further identify, prioritize and annotate somatic SNV from patient tumor (Other Biological samples). Our tool will apply an ensemble-based approach to improve the accuracy and annotation of variant callers. “Snipea” calculates the authenticity and statistical significance that an SNV is causative for a query disease and hence provides a means of prioritizing candidate SNVs. The ranking algorithm will take into account the callers_agreement, clinical_impact (protein-altering aberrations such as non-synonymous SNV, Stop code gained/loss or Frame shift mutation), quality score from each tool and public_database_status.
 
 #@@@@@@@@@@@@@@@@#
 ## REQUIREMENTS ##
