@@ -91,7 +91,7 @@ Genotype Definition and thresholds:
 Homozygote reference if AR<=0.200, heterozygote if 0.200<AR<0.900, and Homozygote ALT if AR>=0.900
 
 We customized some FLAG and TAG; All of them have been added to the vcf Header.
-The outputted vcf is VCF 4.1 compliant.
+The output vcf file is VCF 4.2 compatible.
 
 
 If any of the input vcf file has more than 10000 events within, an email will be sent to the user who started the script letting the user know that the merging might take a while. This threshold is hardcoded and can be modified by the owner of the script. (hard coded threshold in function <<countEventsPerFile>> )
